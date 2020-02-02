@@ -2661,8 +2661,10 @@ static void gps_process_sync(void) {
     struct timespec gps_time;
     struct timespec utc;
     uint32_t trig_tstamp; /* concentrator timestamp associated with PPM pulse */
-    int i = lgw_gps_get(&utc, &gps_time, NULL, NULL);
 
+    pthread_mutex_lock(&mx_meas_gps);
+    int i = lgw_gps_get(&utc, &gps_time, NULL, NULL);
+    pthread_mutex_unlock(&mx_meas_gps);
     /* get GPS time for synchronization */
     if (i != LGW_GPS_SUCCESS) {
         MSG("WARNING: [gps] could not get GPS time from GPS\n");
@@ -2682,6 +2684,7 @@ static void gps_process_sync(void) {
     pthread_mutex_lock(&mx_timeref);
     i = lgw_gps_sync(&time_reference_gps, trig_tstamp, utc, gps_time);
     pthread_mutex_unlock(&mx_timeref);
+
     if (i != LGW_GPS_SUCCESS) {
         MSG("WARNING: [gps] GPS out of sync, keeping previous time reference\n");
     }
@@ -2691,10 +2694,11 @@ static void gps_process_coords(void) {
     /* position variable */
     struct coord_s coord;
     struct coord_s gpserr;
-    int    i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
+    //int i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
 
     /* update gateway coordinates */
     pthread_mutex_lock(&mx_meas_gps);
+    int i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
     if (i == LGW_GPS_SUCCESS) {
         gps_coord_valid = true;
         meas_gps_coord = coord;
@@ -2772,7 +2776,10 @@ void thread_gps(void) {
                         /* checksum failed */
                         frame_size = 0;
                     } else if (latest_msg == NMEA_RMC) { /* Get location from RMC frames */
-                        gps_process_coords();
+                        //gps_process_coords();
+gps_process_sync();
+                    } else if (latest_msg == NMEA_GGA) {
+gps_process_coords();
                     }
                 }
             }
@@ -2836,6 +2843,15 @@ void thread_valid(void) {
         /* calculate when the time reference was last updated */
         pthread_mutex_lock(&mx_timeref);
         gps_ref_age = (long)difftime(time(NULL), time_reference_gps.systime);
+
+//printf("time     = %ld\n", time(NULL));
+//printf("systime = %ld\n", time_reference_gps.systime);
+//printf("count_us = %d\n", time_reference_gps.count_us);
+//printf("gps = %ld\n", time_reference_gps.gps.tv_sec);
+//printf("utc = %ld\n", time_reference_gps.utc.tv_sec);
+//printf("gps_ref_age = %ld\n", gps_ref_age);
+
+
         if ((gps_ref_age >= 0) && (gps_ref_age <= GPS_REF_MAX_AGE)) {
             /* time ref is ok, validate and  */
             gps_ref_valid = true;
